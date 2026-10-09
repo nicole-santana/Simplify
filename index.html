@@ -1,0 +1,267 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entenda seus documentos</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 20px;
+      color: #222;
+      line-height: 1.6;
+    }
+
+    h1, h2 {
+      line-height: 1.3;
+    }
+
+    label {
+      display: block;
+      margin: 16px 0 6px;
+      font-weight: bold;
+    }
+
+    input[type="file"], textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid #aaa;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    button {
+      padding: 12px 16px;
+      margin: 8px 6px 8px 0;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font: inherit;
+      background: #e8e8e8;
+      color: #222;
+    }
+
+    button[type="submit"] {
+      background: #174ea6;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    #resultado {
+      margin-top: 20px;
+      padding: 18px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    #status {
+      margin-top: 16px;
+    }
+
+    .ajuda {
+      color: #555;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Entenda seus documentos</h1>
+
+  <p>
+    Envie um documento para entender o que ele significa
+    e descobrir o que você pode fazer.
+  </p>
+
+  <form id="formulario">
+    <label for="arquivo">1. Escolha seu documento</label>
+
+    <input
+      type="file"
+      id="arquivo"
+      accept=".pdf,.docx"
+      required
+    >
+
+    <p class="ajuda">
+      Aceitamos arquivos PDF e Word (DOCX), de até 10 MB.
+    </p>
+
+    <label for="pergunta">2. Você tem alguma dúvida? (opcional)</label>
+
+    <textarea
+      id="pergunta"
+      maxlength="1000"
+      placeholder="Ex.: O que eu preciso fazer? Até quando posso pagar? O que acontece se eu já paguei?"
+    ></textarea>
+
+    <button type="submit" id="enviar">
+      Entender meu documento
+    </button>
+  </form>
+
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <section id="areaResultado" hidden>
+    <h2>Veja o que você precisa saber</h2>
+
+    <div id="resultado"></div>
+
+    <div aria-label="Controles de áudio">
+      <button type="button" id="ouvir">
+        🔊 Ouvir explicação
+      </button>
+
+      <button type="button" id="parar" disabled>
+        ⏹ Parar áudio
+      </button>
+    </div>
+
+    <p class="ajuda">
+      A leitura usa a voz disponível no seu navegador.
+    </p>
+  </section>
+
+  <script>
+    const formulario = document.getElementById("formulario");
+    const campoArquivo = document.getElementById("arquivo");
+    const campoPergunta = document.getElementById("pergunta");
+    const botaoEnviar = document.getElementById("enviar");
+    const status = document.getElementById("status");
+    const areaResultado = document.getElementById("areaResultado");
+    const resultado = document.getElementById("resultado");
+    const botaoOuvir = document.getElementById("ouvir");
+    const botaoParar = document.getElementById("parar");
+
+    let textoExplicacao = "";
+
+    function pararAudio() {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      botaoParar.disabled = true;
+      botaoOuvir.disabled = false;
+      botaoOuvir.textContent = "🔊 Ouvir explicação";
+    }
+
+    formulario.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      pararAudio();
+
+      const arquivo = campoArquivo.files[0];
+
+      if (!arquivo) {
+        status.textContent = "Escolha um documento primeiro.";
+        return;
+      }
+
+      const extensao = arquivo.name.split(".").pop().toLowerCase();
+
+      if (!["pdf", "docx"].includes(extensao)) {
+        status.textContent = "Escolha um arquivo PDF ou DOCX.";
+        return;
+      }
+
+      if (arquivo.size > 10 * 1024 * 1024) {
+        status.textContent = "O arquivo deve ter no máximo 10 MB.";
+        return;
+      }
+
+      const dados = new FormData();
+      dados.append("arquivo", arquivo);
+      dados.append("pergunta", campoPergunta.value.trim());
+
+      botaoEnviar.disabled = true;
+      status.textContent =
+        "Estamos lendo seu documento. Isso pode levar alguns minutos.";
+      areaResultado.hidden = true;
+      resultado.textContent = "";
+
+      try {
+        const resposta = await fetch("/api/simplificar", {
+          method: "POST",
+          body: dados
+        });
+
+        const dadosResposta = await resposta.json();
+
+        if (!resposta.ok) {
+          throw new Error(
+            dadosResposta.erro || "Não foi possível processar o documento."
+          );
+        }
+
+        textoExplicacao = dadosResposta.explicacao;
+        resultado.textContent = textoExplicacao;
+
+        areaResultado.hidden = false;
+        status.textContent = "Pronto! Seu documento foi explicado.";
+      } catch (erro) {
+        status.textContent =
+          erro.message || "Não foi possível conectar ao servidor.";
+      } finally {
+        botaoEnviar.disabled = false;
+      }
+    });
+
+    botaoOuvir.addEventListener("click", () => {
+      if (!("speechSynthesis" in window)) {
+        status.textContent =
+          "Seu navegador não oferece leitura em voz alta. Tente outro navegador.";
+        return;
+      }
+
+      if (!textoExplicacao) return;
+
+      pararAudio();
+
+      const fala = new SpeechSynthesisUtterance(textoExplicacao);
+      fala.lang = "pt-BR";
+      fala.rate = 0.9;
+      fala.pitch = 1;
+
+      fala.onstart = () => {
+        botaoOuvir.disabled = true;
+        botaoParar.disabled = false;
+        botaoOuvir.textContent = "🔊 Lendo...";
+      };
+
+      fala.onend = () => {
+        botaoOuvir.disabled = false;
+        botaoParar.disabled = true;
+        botaoOuvir.textContent = "🔊 Ouvir explicação";
+      };
+
+      fala.onerror = () => {
+        botaoOuvir.disabled = false;
+        botaoParar.disabled = true;
+        botaoOuvir.textContent = "🔊 Ouvir explicação";
+        status.textContent = "Não foi possível reproduzir o áudio.";
+      };
+
+      window.speechSynthesis.speak(fala);
+    });
+
+    botaoParar.addEventListener("click", pararAudio);
+
+    window.addEventListener("beforeunload", pararAudio);
+  </script>
+</body>
+</html>
